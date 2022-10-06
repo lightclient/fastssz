@@ -9,8 +9,8 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -95,41 +95,36 @@ func Encode(source string, targets []string, output string, includePaths []strin
 	return nil
 }
 
-func isDir(path string) (bool, error) {
-	fileInfo, err := os.Stat(path)
-	if err != nil {
-		return false, err
-	}
-	return fileInfo.IsDir(), nil
-}
-
 func parseInput(source string) (map[string]*ast.File, error) {
 	files := map[string]*ast.File{}
 
-	ok, err := isDir(source)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		// dir
-		astFiles, err := parser.ParseDir(token.NewFileSet(), source, nil, parser.AllErrors)
-		if err != nil {
-			return nil, err
+	// Don't parse files named "*_test" or "ignore".
+	filter := func(f fs.FileInfo) bool {
+		if strings.HasSuffix(f.Name(), "_test") || f.Name() == "ignore" {
+			return false
 		}
-		for _, v := range astFiles {
-			if strings.HasSuffix(v.Name, "_test") || v.Name == "ignore" {
-				continue
+		return true
+	}
+
+	filepath.Walk(source, func(path string, info fs.FileInfo, err error) error {
+		if info.IsDir() {
+			astFiles, err := parser.ParseDir(token.NewFileSet(), source, filter, parser.AllErrors)
+			if err != nil {
+				return err
 			}
-			files = v.Files
+			for _, v := range astFiles {
+				files = v.Files
+			}
+		} else {
+			astfile, err := parser.ParseFile(token.NewFileSet(), info.Name(), nil, parser.AllErrors)
+			if err != nil {
+				return err
+			}
+			files[source] = astfile
 		}
-	} else {
-		// single file
-		astfile, err := parser.ParseFile(token.NewFileSet(), source, nil, parser.AllErrors)
-		if err != nil {
-			return nil, err
-		}
-		files[source] = astfile
-	}
+		return nil
+	})
+
 	return files, nil
 }
 

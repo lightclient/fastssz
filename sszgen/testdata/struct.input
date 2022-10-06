@@ -1,0 +1,7 @@
+package main
+
+type X struct {
+        A uint32
+        B uint64
+}
+
